@@ -1265,6 +1265,7 @@ function SettingsPage({ showToast }) {
 function ImportModal({ onClose, onImport }) {
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [allData, setAllData] = useState(null);
   const [fileName, setFileName] = useState(null);
   const fileRef = useRef();
 
@@ -1277,6 +1278,7 @@ function ImportModal({ onClose, onImport }) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws);
         setPreview(data.slice(0, 5));
+        setAllData(data);
       } catch {
         setPreview([{ "Error": "Could not parse file. Use a valid XLSX or CSV." }]);
       }
@@ -1291,7 +1293,7 @@ function ImportModal({ onClose, onImport }) {
   };
 
   const handleConfirm = () => {
-    if (preview && preview.length > 0 && !preview[0]["Error"]) onImport(preview);
+    if (allData && allData.length > 0) onImport(allData);
     else {
       const sample = [
         { "Party Name": "Sample Traders", "GST": "24AABCS0001A1Z1", "Phone": "9999988888", "Email": "sample@test.com", "Invoice Date": "2024-01-01", "Due Date": "2024-02-01", "Amount": "150000", "Paid": "0" },
@@ -1324,7 +1326,7 @@ function ImportModal({ onClose, onImport }) {
             {fileName || "Drop your Tally export here"}
           </div>
           <div style={{ color: "#64748b", fontSize: 13 }}>Supports XLSX, XLS, CSV • Max 10MB</div>
-          {preview && <div style={{ marginTop: 10, color: "#10b981", fontSize: 13 }}>✓ {preview.length} rows detected</div>}
+          {allData && <div style={{ marginTop: 10, color: "#10b981", fontSize: 13 }}>✓ {allData.length} rows detected — showing first 5 as preview</div>}
         </div>
 
         {preview && (
@@ -1359,7 +1361,7 @@ function ImportModal({ onClose, onImport }) {
 
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={handleConfirm} className="btn-primary" style={{ flex: 1 }}>
-            {preview ? `Import ${preview.length} Records` : "Import Demo Data"}
+            {allData ? `Import ${allData.length} Records` : "Import Demo Data"}
           </button>
           <button onClick={onClose} className="btn-secondary">Cancel</button>
         </div>
