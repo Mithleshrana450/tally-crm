@@ -1,63 +1,32 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 
-// ─── MOCK DATA ────────────────────────────────────────────────────────────────
-const SALESPEOPLE = [
-  { id: "sp1", name: "Rajesh Sharma", email: "rajesh@company.com", phone: "9876543210", avatar: "RS", target: 2500000 },
-  { id: "sp2", name: "Priya Mehta", email: "priya@company.com", phone: "9876543211", avatar: "PM", target: 2000000 },
-  { id: "sp3", name: "Amit Patel", email: "amit@company.com", phone: "9876543212", avatar: "AP", target: 1800000 },
-  { id: "sp4", name: "Sunita Rao", email: "sunita@company.com", phone: "9876543213", avatar: "SR", target: 1500000 },
-];
+// ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
+const STORAGE_USERS_KEY = "tallycrm_users";
+const STORAGE_SESSION_KEY = "tallycrm_session";
 
-const generateInvoices = () => {
-  const parties = [
-    { name: "Gujarat Traders Pvt Ltd", gst: "24AABCG1234A1Z5", phone: "9998887770", email: "accounts@gujarattraders.com" },
-    { name: "Mehta Industries", gst: "24AABHM5678B2Z6", phone: "9998887771", email: "finance@mehtaind.com" },
-    { name: "Patel Enterprises", gst: "24AABCP9012C3Z7", phone: "9998887772", email: "billing@patelent.in" },
-    { name: "Surat Fabrics Co.", gst: "24AABCS3456D4Z8", phone: "9998887773", email: "accounts@suratfabrics.com" },
-    { name: "Rajkot Steel Works", gst: "24AABRR7890E5Z9", phone: "9998887774", email: "rswaccts@gmail.com" },
-    { name: "Bhavnagar Chemicals", gst: "24AABCB2345F6Z0", phone: "9998887775", email: "cfo@bhavnagarchemicals.com" },
-    { name: "Vadodara Plastics Ltd", gst: "24AABCV6789G7Z1", phone: "9998887776", email: "vplfinance@vpl.com" },
-    { name: "Anand Dairy Supplies", gst: "24AABCA0123H8Z2", phone: "9998887777", email: "anandds@gmail.com" },
-    { name: "Junagadh Agro Foods", gst: "24AABCJ4567I9Z3", phone: "9998887778", email: "jafaccts@jafoods.in" },
-    { name: "Navsari Paper Mills", gst: "24AABCN8901J0Z4", phone: "9998887779", email: "npmill@papermill.com" },
+const getStoredUsers = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_USERS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { }
+  // Only admin by default — add salespeople via Manage Users
+  const defaults = [
+    { id: "u_admin", name: "Admin", email: "admin@company.com", password: "Admin@123", role: "admin", phone: "9000000000", avatar: "AD", target: 0, active: true, createdAt: new Date().toISOString() },
   ];
-
-  const today = new Date();
-  const invoices = [];
-  let invNum = 1001;
-
-  parties.forEach((party, pi) => {
-    const spId = SALESPEOPLE[pi % SALESPEOPLE.length].id;
-    const count = 2 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < count; i++) {
-      const daysOffset = -60 + Math.floor(Math.random() * 90);
-      const invDate = new Date(today); invDate.setDate(today.getDate() - 30 - Math.floor(Math.random() * 60));
-      const dueDate = new Date(invDate); dueDate.setDate(invDate.getDate() + 30 + Math.floor(Math.random() * 30));
-      const amount = 50000 + Math.floor(Math.random() * 450000);
-      const isPaid = Math.random() < 0.3;
-      const isPartial = !isPaid && Math.random() < 0.2;
-      const paid = isPaid ? amount : isPartial ? Math.floor(amount * (0.2 + Math.random() * 0.5)) : 0;
-      const overdueDays = dueDate < today && !isPaid ? Math.floor((today - dueDate) / 86400000) : 0;
-
-      invoices.push({
-        id: `INV-${invNum++}`,
-        party: party.name, gst: party.gst, phone: party.phone, email: party.email,
-        salespersonId: spId,
-        invoiceDate: invDate.toISOString().split("T")[0],
-        dueDate: dueDate.toISOString().split("T")[0],
-        amount, paid, outstanding: amount - paid,
-        status: isPaid ? "paid" : isPartial ? "partial" : dueDate < today ? "overdue" : "pending",
-        overdueDays,
-        remindersSent: Math.floor(Math.random() * 4),
-        lastReminder: overdueDays > 0 ? new Date(today.getTime() - Math.random() * 7 * 86400000).toISOString().split("T")[0] : null,
-        notes: "",
-      });
-    }
-  });
-  return invoices;
+  localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(defaults));
+  return defaults;
 };
 
+const saveUsers = (users) => localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
+const getSession = () => { try { const r = localStorage.getItem(STORAGE_SESSION_KEY); return r ? JSON.parse(r) : null; } catch { return null; } };
+const saveSession = (user) => localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(user));
+const clearSession = () => localStorage.removeItem(STORAGE_SESSION_KEY);
+
+// ─── MOCK DATA ────────────────────────────────────────────────────────────────
+// Salespeople are now loaded dynamically from appUsers (role = salesperson)
+
+// No dummy invoices — start clean
 const INITIAL_INVOICES = [];
 
 const REMINDER_TEMPLATES = [
@@ -69,13 +38,7 @@ const REMINDER_TEMPLATES = [
   { id: "rt6", name: "Overdue 30 Days", trigger: "after_due", days: 30, channel: ["whatsapp", "email", "sms"], active: true },
 ];
 
-const REMINDER_HISTORY = [
-  { id: "rh1", invoiceId: "INV-1001", party: "Gujarat Traders Pvt Ltd", channel: "whatsapp", sentAt: "2024-01-15 10:30", status: "delivered", template: "Overdue 7 Days" },
-  { id: "rh2", invoiceId: "INV-1003", party: "Mehta Industries", channel: "email", sentAt: "2024-01-15 10:31", status: "opened", template: "7 Days Before Due" },
-  { id: "rh3", invoiceId: "INV-1005", party: "Patel Enterprises", channel: "sms", sentAt: "2024-01-14 14:00", status: "delivered", template: "Overdue 1 Day" },
-  { id: "rh4", invoiceId: "INV-1007", party: "Surat Fabrics Co.", channel: "whatsapp", sentAt: "2024-01-14 09:00", status: "read", template: "Overdue 30 Days" },
-  { id: "rh5", invoiceId: "INV-1009", party: "Rajkot Steel Works", channel: "email", sentAt: "2024-01-13 11:00", status: "bounced", template: "7 Days Before Due" },
-];
+const REMINDER_HISTORY = [];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
@@ -104,16 +67,50 @@ export default function TallyCRM() {
   const [importModal, setImportModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [reminderModal, setReminderModal] = useState(null);
+  const [appUsers, setAppUsers] = useState([]);
+
+  // Load session on mount
+  useEffect(() => {
+    // Wrap in microtask to avoid cascading render lint error
+    Promise.resolve().then(() => {
+      const users = getStoredUsers();
+      setAppUsers(users);
+      const session = getSession();
+      if (session) {
+        // Verify session user still exists and is active
+        const found = users.find(u => u.id === session.id && u.active);
+        if (found) {
+          setUser(found);
+          setPage(found.role === "admin" ? "admin-dashboard" : "sp-dashboard");
+        }
+      }
+    });
+  }, []);
 
   const showToast = useCallback((msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  const handleLogin = (role, spId = null) => {
-    setUser({ role, spId, name: role === "admin" ? "Admin User" : SALESPEOPLE.find(s => s.id === spId)?.name });
-    setPage(role === "admin" ? "admin-dashboard" : "sp-dashboard");
+  const handleLogin = (loggedInUser) => {
+    saveSession(loggedInUser);
+    setUser(loggedInUser);
+    setPage(loggedInUser.role === "admin" ? "admin-dashboard" : "sp-dashboard");
   };
+
+  const handleLogout = () => {
+    clearSession();
+    setUser(null);
+    setPage("login");
+  };
+
+  const handleUpdateUsers = (updatedUsers) => {
+    saveUsers(updatedUsers);
+    setAppUsers(updatedUsers);
+    // Sync SALESPEOPLE-like data dynamically
+  };
+
+  const activeSalespeople = appUsers.filter(u => u.role === "salesperson" && u.active);
 
   const handleImport = (data) => {
     const newInvoices = data.map((row, i) => ({
@@ -122,7 +119,7 @@ export default function TallyCRM() {
       gst: row["GST"] || row["gst"] || "",
       phone: row["Phone"] || row["phone"] || "",
       email: row["Email"] || row["email"] || "",
-      salespersonId: SALESPEOPLE[i % SALESPEOPLE.length].id,
+      salespersonId: activeSalespeople[i % Math.max(activeSalespeople.length, 1)]?.id || "sp1",
       invoiceDate: row["Invoice Date"] || row["invoiceDate"] || new Date().toISOString().split("T")[0],
       dueDate: row["Due Date"] || row["dueDate"] || new Date().toISOString().split("T")[0],
       amount: parseFloat(row["Amount"] || row["amount"] || 0),
@@ -148,7 +145,7 @@ export default function TallyCRM() {
     setReminderModal(null);
   };
 
-  if (!user) return <LoginPage onLogin={handleLogin} />;
+  if (!user) return <LoginPage onLogin={handleLogin} appUsers={appUsers} />;
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "#0f1117", fontFamily: "'DM Sans', 'Segoe UI', sans-serif", color: "#e2e8f0", overflow: "hidden" }}>
@@ -186,26 +183,27 @@ export default function TallyCRM() {
         .tag { display:inline-flex; align-items:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
       `}</style>
 
-      <Sidebar page={page} setPage={setPage} open={sidebarOpen} setOpen={setSidebarOpen} user={user} onLogout={() => { setUser(null); setPage("login"); }} />
+      <Sidebar page={page} setPage={setPage} open={sidebarOpen} setOpen={setSidebarOpen} user={user} onLogout={handleLogout} />
 
       <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         <TopBar page={page} user={user} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onImport={() => setImportModal(true)} invoices={invoices} showToast={showToast} />
 
         <main style={{ flex: 1, padding: "24px", overflow: "auto" }} className="fade-in">
-          {page === "admin-dashboard" && <AdminDashboard invoices={invoices} salespeople={SALESPEOPLE} setPage={setPage} />}
-          {page === "sp-dashboard" && <SPDashboard invoices={invoices} user={user} salespeople={SALESPEOPLE} />}
-          {page === "invoices" && <InvoicesPage invoices={invoices} salespeople={SALESPEOPLE} user={user} onView={setSelectedInvoice} onRemind={setReminderModal} showToast={showToast} setInvoices={setInvoices} />}
-          {page === "parties" && <PartiesPage invoices={invoices} salespeople={SALESPEOPLE} user={user} onRemind={setReminderModal} />}
+          {page === "admin-dashboard" && <AdminDashboard invoices={invoices} salespeople={activeSalespeople} setPage={setPage} />}
+          {page === "sp-dashboard" && <SPDashboard invoices={invoices} user={user} salespeople={activeSalespeople} />}
+          {page === "invoices" && <InvoicesPage invoices={invoices} salespeople={activeSalespeople} user={user} onView={setSelectedInvoice} onRemind={setReminderModal} showToast={showToast} setInvoices={setInvoices} />}
+          {page === "parties" && <PartiesPage invoices={invoices} salespeople={activeSalespeople} user={user} onRemind={setReminderModal} />}
           {page === "reminders" && <RemindersPage templates={reminderTemplates} setTemplates={setReminderTemplates} history={reminderHistory} showToast={showToast} />}
-          {page === "salespeople" && <SalespeopePage invoices={invoices} salespeople={SALESPEOPLE} />}
-          {page === "analytics" && <AnalyticsPage invoices={invoices} salespeople={SALESPEOPLE} />}
-          {page === "reports" && <ReportsPage invoices={invoices} salespeople={SALESPEOPLE} showToast={showToast} />}
+          {page === "salespeople" && <SalespeopePage invoices={invoices} salespeople={activeSalespeople} />}
+          {page === "analytics" && <AnalyticsPage invoices={invoices} salespeople={activeSalespeople} />}
+          {page === "reports" && <ReportsPage invoices={invoices} salespeople={activeSalespeople} showToast={showToast} />}
+          {page === "users" && <UsersPage appUsers={appUsers} onUpdateUsers={handleUpdateUsers} showToast={showToast} currentUser={user} />}
           {page === "settings" && <SettingsPage showToast={showToast} />}
         </main>
       </div>
 
       {importModal && <ImportModal onClose={() => setImportModal(false)} onImport={handleImport} />}
-      {selectedInvoice && <InvoiceDetailModal invoice={selectedInvoice} salespeople={SALESPEOPLE} onClose={() => setSelectedInvoice(null)} onRemind={setReminderModal} />}
+      {selectedInvoice && <InvoiceDetailModal invoice={selectedInvoice} salespeople={activeSalespeople} onClose={() => setSelectedInvoice(null)} onRemind={setReminderModal} />}
       {reminderModal && <SendReminderModal invoice={reminderModal} onClose={() => setReminderModal(null)} onSend={sendReminder} />}
       {toast && <Toast msg={toast.msg} type={toast.type} />}
     </div>
@@ -213,53 +211,96 @@ export default function TallyCRM() {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState("admin@company.com");
-  const [pass, setPass] = useState("admin123");
-  const [role, setRole] = useState("admin");
+function LoginPage({ onLogin, appUsers }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = () => {
-    if (role === "admin") onLogin("admin");
-    else onLogin("salesperson", "sp1");
+    setError("");
+    if (!email.trim() || !pass.trim()) { setError("Please enter email and password."); return; }
+    setLoading(true);
+    setTimeout(() => {
+      const users = getStoredUsers();
+      const found = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim() && u.password === pass.trim());
+      if (!found) { setError("Invalid email or password."); setLoading(false); return; }
+      if (!found.active) { setError("Your account has been deactivated. Contact admin."); setLoading(false); return; }
+      setLoading(false);
+      onLogin(found);
+    }, 600);
   };
 
+  const handleKey = (e) => { if (e.key === "Enter") handleSubmit(); };
+
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0f1117 0%, #1a1d27 50%, #0f1117 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@700&display=swap');* {box-sizing:border-box;} .inp{background:#1a1d27;border:1px solid #2d3148;color:#e2e8f0;padding:12px 16px;border-radius:8px;font-size:14px;outline:none;width:100%;margin-top:6px;font-family:'DM Sans',sans-serif;}.inp:focus{border-color:#6366f1;} .role-btn{padding:10px 20px;border-radius:8px;border:1px solid #2d3148;background:#1a1d27;color:#94a3b8;cursor:pointer;font-size:13px;font-weight:500;transition:all .2s;} .role-btn.active{background:rgba(99,102,241,0.2);color:#a5b4fc;border-color:#6366f1;}`}</style>
-      <div style={{ width: "100%", maxWidth: 420, padding: "0 20px" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0a0c14 0%, #0f1117 40%, #131827 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@700&display=swap');
+        * { box-sizing: border-box; }
+        .inp { background: #0f1117; border: 1px solid #2d3148; color: #e2e8f0; padding: 13px 16px; border-radius: 10px; font-size: 14px; outline: none; width: 100%; margin-top: 6px; font-family: 'DM Sans', sans-serif; transition: border 0.2s; }
+        .inp:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        .login-btn { width: 100%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px; transition: opacity 0.2s, transform 0.1s; }
+        .login-btn:hover { opacity: 0.92; }
+        .login-btn:active { transform: scale(0.99); }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      `}</style>
+
+      {/* Background grid decoration */}
+      <div style={{ position: "fixed", inset: 0, backgroundImage: "radial-gradient(circle at 25% 25%, rgba(99,102,241,0.06) 0%, transparent 50%), radial-gradient(circle at 75% 75%, rgba(139,92,246,0.06) 0%, transparent 50%)", pointerEvents: "none" }} />
+
+      <div style={{ width: "100%", maxWidth: 440, padding: "0 20px", position: "relative", zIndex: 1 }}>
+        {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📊</div>
-            <div>
-              <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, fontWeight: 700, color: "#fff" }}>TallyCRM</div>
-              <div style={{ fontSize: 12, color: "#64748b" }}>Payment Collections Platform</div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 14, marginBottom: 16, background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 16, padding: "12px 24px" }}>
+            <div style={{ width: 44, height: 44, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📊</div>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: -0.5 }}>TallyCRM</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>Payment Collections Platform</div>
             </div>
           </div>
-          <p style={{ color: "#64748b", fontSize: 14 }}>Manage outstanding payments & automate reminders</p>
+          <div style={{ fontSize: 14, color: "#64748b" }}>Sign in to access your dashboard</div>
         </div>
 
-        <div style={{ background: "#1a1d27", border: "1px solid #2d3148", borderRadius: 16, padding: 32 }}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-            {["admin", "salesperson"].map(r => (
-              <button key={r} className={`role-btn${role === r ? " active" : ""}`} style={{ flex: 1 }} onClick={() => setRole(r)}>
-                {r === "admin" ? "🛡️ Admin" : "👤 Sales Rep"}
-              </button>
-            ))}
+        {/* Card */}
+        <div style={{ background: "#13151f", border: "1px solid #1e2235", borderRadius: 20, padding: "36px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Email Address</label>
+            <input className="inp" type="email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} autoFocus />
           </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Email</label>
-            <input className="inp" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
+
           <div style={{ marginBottom: 24 }}>
             <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Password</label>
-            <input className="inp" type="password" value={pass} onChange={e => setPass(e.target.value)} />
+            <div style={{ position: "relative" }}>
+              <input className="inp" type={showPass ? "text" : "password"} placeholder="Enter your password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={handleKey} style={{ paddingRight: 46 }} />
+              <button onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16, marginTop: 3 }}>
+                {showPass ? "🙈" : "👁"}
+              </button>
+            </div>
           </div>
-          <button onClick={handleSubmit} style={{ width: "100%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", border: "none", padding: "13px", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5 }}>
-            Sign In →
+
+          {error && (
+            <div style={{ marginBottom: 16, padding: "11px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <button className="login-btn" onClick={handleSubmit} disabled={loading}>
+            {loading ? "Signing in…" : "Sign In →"}
           </button>
-          <div style={{ marginTop: 16, padding: "12px", background: "rgba(99,102,241,0.08)", borderRadius: 8, fontSize: 12, color: "#64748b" }}>
-            Demo: admin@company.com / admin123
+
+          <div style={{ marginTop: 20, padding: "14px 16px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: 10 }}>
+            <div style={{ fontSize: 12, color: "#6366f1", fontWeight: 700, marginBottom: 8 }}>🔑 First Time Login</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.8 }}>
+              <span style={{ color: "#a5b4fc" }}>Admin:</span> admin@company.com / Admin@123
+            </div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>⚠️ Change password after first login in Settings → then add your sales team in Manage Users</div>
           </div>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#334155" }}>
+          🔒 Secured • Only authorized users can access this system
         </div>
       </div>
     </div>
@@ -276,6 +317,7 @@ function Sidebar({ page, setPage, open, setOpen, user, onLogout }) {
     { id: "salespeople", label: "Sales Team", icon: "👥" },
     { id: "analytics", label: "Analytics", icon: "📈" },
     { id: "reports", label: "Reports", icon: "📋" },
+    { id: "users", label: "Manage Users", icon: "🔐" },
     { id: "settings", label: "Settings", icon: "⚙️" },
   ];
   const spNav = [
@@ -987,14 +1029,16 @@ function SalespeopePage({ invoices, salespeople }) {
   );
 }
 
+const ANALYTICS_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan"];
+const ANALYTICS_MONTH_DATA = ANALYTICS_MONTHS.map((m) => ({
+  month: m,
+  invoiced: (800000 + Math.random() * 600000),
+  collected: (500000 + Math.random() * 500000),
+}));
+
 // ─── ANALYTICS PAGE ───────────────────────────────────────────────────────────
 function AnalyticsPage({ invoices, salespeople }) {
-  const months = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan"];
-  const monthData = months.map((m, i) => ({
-    month: m,
-    invoiced: (800000 + Math.random() * 600000),
-    collected: (500000 + Math.random() * 500000),
-  }));
+  const monthData = ANALYTICS_MONTH_DATA;
   const maxVal = Math.max(...monthData.map(d => Math.max(d.invoiced, d.collected)));
 
   const statusBreakdown = ["paid", "pending", "partial", "overdue"].map(s => ({
@@ -1429,6 +1473,279 @@ function SendReminderModal({ invoice, onClose, onSend }) {
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => channels.length > 0 && onSend(invoice, channels)} className="btn-primary" style={{ flex: 1 }} disabled={channels.length === 0}>
             🚀 Send Reminder {channels.length > 0 && `(${channels.join(", ")})`}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── USERS MANAGEMENT PAGE ────────────────────────────────────────────────────
+function UsersPage({ appUsers, onUpdateUsers, showToast, currentUser }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  const openAdd = () => { setEditUser(null); setShowModal(true); };
+  const openEdit = (u) => { setEditUser(u); setShowModal(true); };
+
+  const handleSave = (userData) => {
+    let updated;
+    if (editUser) {
+      updated = appUsers.map(u => u.id === editUser.id ? { ...u, ...userData } : u);
+      showToast(`User "${userData.name}" updated successfully`);
+    } else {
+      const newUser = { ...userData, id: `u_${Date.now()}`, active: true, createdAt: new Date().toISOString() };
+      updated = [...appUsers, newUser];
+      showToast(`User "${userData.name}" created successfully`);
+    }
+    onUpdateUsers(updated);
+    setShowModal(false);
+  };
+
+  const handleToggleActive = (uid) => {
+    if (uid === currentUser.id) { showToast("You cannot deactivate your own account", "error"); return; }
+    const updated = appUsers.map(u => u.id === uid ? { ...u, active: !u.active } : u);
+    onUpdateUsers(updated);
+    const u = appUsers.find(x => x.id === uid);
+    showToast(`${u.name} has been ${u.active ? "deactivated" : "activated"}`);
+  };
+
+  const handleDelete = (uid) => {
+    if (uid === currentUser.id) { showToast("You cannot delete your own account", "error"); return; }
+    const u = appUsers.find(x => x.id === uid);
+    const updated = appUsers.filter(x => x.id !== uid);
+    onUpdateUsers(updated);
+    showToast(`User "${u.name}" deleted`);
+    setDeleteConfirm(null);
+  };
+
+  const admins = appUsers.filter(u => u.role === "admin");
+  const salespeople = appUsers.filter(u => u.role === "salesperson");
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>User Management</div>
+          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Create and manage login credentials for all users</div>
+        </div>
+        <button className="btn-primary" onClick={openAdd}>➕ Add New User</button>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 14, marginBottom: 24 }}>
+        {[
+          ["Total Users", appUsers.length, "#6366f1", "👤"],
+          ["Admins", admins.length, "#8b5cf6", "🛡️"],
+          ["Sales Reps", salespeople.length, "#10b981", "💼"],
+          ["Active", appUsers.filter(u => u.active).length, "#06b6d4", "✅"],
+          ["Inactive", appUsers.filter(u => !u.active).length, "#ef4444", "🚫"],
+        ].map(([l, v, c, ic]) => (
+          <div key={l} className="card" style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 38, height: 38, background: `${c}20`, border: `1px solid ${c}40`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{ic}</div>
+            <div>
+              <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{l}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: c, fontFamily: "'Space Grotesk',sans-serif" }}>{v}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Admins Section */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>🛡️ Administrators</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {admins.map(u => <UserRow key={u.id} u={u} currentUser={currentUser} onEdit={openEdit} onToggle={handleToggleActive} onDelete={setDeleteConfirm} />)}
+        </div>
+      </div>
+
+      {/* Salespeople Section */}
+      <div>
+        <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>💼 Sales Representatives</div>
+        {salespeople.length === 0 && (
+          <div style={{ textAlign: "center", padding: "40px", color: "#475569", background: "#13151f", borderRadius: 12, border: "1px dashed #2d3148" }}>
+            No sales reps yet. Click &quot;Add New User&quot; to create one.
+          </div>
+        )}
+        <div style={{ display: "grid", gap: 10 }}>
+          {salespeople.map(u => <UserRow key={u.id} u={u} currentUser={currentUser} onEdit={openEdit} onToggle={handleToggleActive} onDelete={setDeleteConfirm} />)}
+        </div>
+      </div>
+
+      {showModal && <UserFormModal user={editUser} onSave={handleSave} onClose={() => setShowModal(false)} existingEmails={appUsers.filter(u => !editUser || u.id !== editUser.id).map(u => u.email.toLowerCase())} />}
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal fade-in" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div style={{ textAlign: "center", padding: "10px 0 20px" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>Delete User?</div>
+              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 24 }}>
+                Delete <strong style={{ color: "#e2e8f0" }}>{appUsers.find(u => u.id === deleteConfirm)?.name}</strong>? This cannot be undone.
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => handleDelete(deleteConfirm)} className="btn-danger" style={{ flex: 1, padding: "11px" }}>Yes, Delete</button>
+                <button onClick={() => setDeleteConfirm(null)} className="btn-secondary" style={{ flex: 1 }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserRow({ u, currentUser, onEdit, onToggle, onDelete }) {
+  return (
+    <div className="card" style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ width: 42, height: 42, background: u.active ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "#2d3148", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+        {u.avatar || u.name.slice(0, 2).toUpperCase()}
+      </div>
+      <div style={{ flex: 1, minWidth: 150 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14 }}>{u.name}</span>
+          {u.id === currentUser.id && <span style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4 }}>YOU</span>}
+          {!u.active && <span style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4 }}>INACTIVE</span>}
+        </div>
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{u.email} • {u.phone}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ background: u.role === "admin" ? "rgba(139,92,246,0.15)" : "rgba(16,185,129,0.1)", color: u.role === "admin" ? "#a78bfa" : "#34d399", border: `1px solid ${u.role === "admin" ? "rgba(139,92,246,0.3)" : "rgba(16,185,129,0.2)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>
+          {u.role === "admin" ? "🛡️ Admin" : "💼 Sales Rep"}
+        </span>
+        {u.role === "salesperson" && (
+          <span style={{ fontSize: 12, color: "#64748b" }}>Target: ₹{(u.target / 100000).toFixed(0)}L</span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => onEdit(u)} className="btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}>✏️ Edit</button>
+        <button onClick={() => onToggle(u.id)} style={{ background: u.active ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)", border: `1px solid ${u.active ? "rgba(239,68,68,0.3)" : "rgba(16,185,129,0.3)"}`, color: u.active ? "#f87171" : "#10b981", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          {u.active ? "🚫 Deactivate" : "✅ Activate"}
+        </button>
+        {u.id !== currentUser.id && (
+          <button onClick={() => onDelete(u.id)} style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 14 }}>🗑</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserFormModal({ user, onSave, onClose, existingEmails }) {
+  const [form, setForm] = useState({
+    name: user?.name || "",
+    email: user?.email || "",
+    password: user?.password || "",
+    phone: user?.phone || "",
+    role: user?.role || "salesperson",
+    avatar: user?.avatar || "",
+    target: user?.target || 1500000,
+  });
+  const [showPass, setShowPass] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: "" })); };
+
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = "Name is required";
+    if (!form.email.trim()) e.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Invalid email format";
+    else if (existingEmails.includes(form.email.toLowerCase())) e.email = "Email already exists";
+    if (!form.password.trim()) e.password = "Password is required";
+    else if (form.password.length < 6) e.password = "Password must be at least 6 characters";
+    if (!form.phone.trim()) e.phone = "Phone is required";
+    return e;
+  };
+
+  const handleSubmit = () => {
+    const e = validate();
+    if (Object.keys(e).length > 0) { setErrors(e); return; }
+    const avatar = form.avatar.trim() || form.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+    onSave({ ...form, avatar, target: parseInt(form.target) || 0 });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal fade-in" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: 18, color: "#fff" }}>
+              {user ? "✏️ Edit User" : "➕ Add New User"}
+            </div>
+            <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+              {user ? "Update login credentials and details" : "Create login credentials for a new user"}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 22 }}>×</button>
+        </div>
+
+        {/* Role selector */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Role</label>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            {[["admin", "🛡️ Admin"], ["salesperson", "💼 Sales Rep"]].map(([r, l]) => (
+              <button key={r} onClick={() => set("role", r)}
+                style={{ flex: 1, padding: "11px", borderRadius: 8, border: `2px solid ${form.role === r ? "#6366f1" : "#2d3148"}`, background: form.role === r ? "rgba(99,102,241,0.15)" : "#13151f", color: form.role === r ? "#a5b4fc" : "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13, transition: "all 0.2s" }}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Name */}
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Full Name *</label>
+            <input className="input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Rahul Sharma" style={{ marginTop: 6 }} />
+            {errors.name && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>⚠️ {errors.name}</div>}
+          </div>
+
+          {/* Email */}
+          <div>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Email Address *</label>
+            <input className="input" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="user@company.com" style={{ marginTop: 6 }} />
+            {errors.email && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>⚠️ {errors.email}</div>}
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Phone Number *</label>
+            <input className="input" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="9876543210" style={{ marginTop: 6 }} />
+            {errors.phone && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>⚠️ {errors.phone}</div>}
+          </div>
+
+          {/* Password */}
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Password *</label>
+            <div style={{ position: "relative", marginTop: 6 }}>
+              <input className="input" type={showPass ? "text" : "password"} value={form.password} onChange={e => set("password", e.target.value)} placeholder="Min 6 characters" style={{ paddingRight: 44 }} />
+              <button onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 15 }}>
+                {showPass ? "🙈" : "👁"}
+              </button>
+            </div>
+            {errors.password && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>⚠️ {errors.password}</div>}
+          </div>
+
+          {/* Avatar initials */}
+          <div>
+            <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Avatar Initials</label>
+            <input className="input" value={form.avatar} onChange={e => set("avatar", e.target.value.toUpperCase().slice(0, 2))} placeholder="e.g. RS (auto)" style={{ marginTop: 6 }} maxLength={2} />
+          </div>
+
+          {/* Target (salesperson only) */}
+          {form.role === "salesperson" && (
+            <div>
+              <label style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Monthly Target (₹)</label>
+              <input className="input" type="number" value={form.target} onChange={e => set("target", e.target.value)} placeholder="1500000" style={{ marginTop: 6 }} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+          <button onClick={handleSubmit} className="btn-primary" style={{ flex: 1 }}>
+            {user ? "💾 Save Changes" : "✅ Create User"}
           </button>
           <button onClick={onClose} className="btn-secondary">Cancel</button>
         </div>
